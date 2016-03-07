@@ -1,0 +1,240 @@
+<html>
+
+<head>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+	<script src="js/canvas-tool.js"></script>
+	<script src="js/tool-match.js"></script>
+	<script src="js/binary.js"></script>
+	<script src="js/timer.js"></script>
+    <style>
+        div#container {
+            width: 640px;
+            height: 360px;
+            box-shadow: 1px 1px 100px #777;
+        }
+        
+        div#heading {
+            padding: 10px 20px 10px 20px;
+            background-color: #111;
+            text-align: right;
+        }
+        
+        button {
+            background: rgba(0, 0, 0, 0);
+            color: #FFF;
+            border-style: none;
+        }
+        
+        div.captured-frame {
+            width: 250px;
+            height: 140px;
+            margin: 10px 25px 10px 25px;
+            box-shadow: 0px 0px 50px #111;
+        }
+        
+        div.captured-frame img {
+            width: 250px;
+            height: 140px;
+            background-color: #444;
+            border-style: none;
+        }
+        
+        div.captured-frame .frame-title {
+            width: 210px;
+            height: 20px;
+            padding: 10px 20px 10px 20px;
+            background: #111;
+            position: relative;
+            bottom: 40px;
+            color: rgba(0, 0, 0, 0.5);
+        }
+        
+        a {
+            text-decoration: none;
+            color: #FFF;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <div id="heading">
+            <button id="play" onclick="openCamera();">
+                &#9658;
+            </button>
+            <button id="pause" onclick="closeCamera();">
+                &#10074;&#10074;
+            </button>
+        </div>
+        <canvas id="stream" style="resize:both;"></canvas>
+    </div>
+    <div id="captures">
+
+    </div>
+    <a id="acapture" href="" download="" style="display : none"></a>
+</body>
+
+<script type="text/javascript">
+	var output = new plot($('#stream'));
+	var pix = output.getPx();
+
+	var bench = new Timer();
+
+	var ws = null;
+	var stream = document.getElementById("stream");
+	var container = document.getElementById("container");
+	var context = stream.getContext("2d");
+	var image = null;
+
+
+	function adjustSize(width, height) {
+		stream.width = width;
+		stream.height = height;
+		stream.style.width = width + "px";
+		stream.style.height = height + "px";
+		container.style.width = width + "px";
+		container.style.height = height + "px";
+		adjustPos();
+	};
+
+	function adjustPos() {
+		//Adjust player
+		$("#container").css("margin-top", function (index) {
+		return ($("window").height() / 2) + ($("#container").height() / 2);
+		});
+		//        $("#container").css("margin-right", function (index) {
+		//            return ($("document").width() - $("#captures").width()) / 2 + ($("#container").width() / 2);
+		//        });
+		/*$("#container").css("margin-left", function (index) {
+			return ((window.innerWidth) - $("#captures").width() - ($("#container").width())) / 2;
+		});*/
+		output.updateSize();
+		pix = output.getPx();
+	};
+
+	$(document).ready(function () {
+		adjustPos();
+		$("#pause").hide();
+	});
+
+	function closeCamera() {
+		$("#play").show();
+		$("#pause").hide();
+		//ws.send("close");
+		ws.close();
+	};
+
+    function openCamera() {
+//		adjustSize(160, 120);
+		//ws = new WebSocket("ws://" + window.location.host.split(":")[0] + ":9090");
+		ws = new BinaryClient("ws://" + window.location.host.split(":")[0] + ":9090");
+		var sizeReceived = false;
+
+		ws.on('stream', function(stream, meta){
+//console.log('onstream', stream, meta, sizeReceived);
+			if(sizeReceived){
+				console.log('onstream', stream, pix.length);
+				console.time('frame');
+				stream.on('data', function(data){
+					console.timeEnd('frame');
+					console.time('frame');
+					bench.reset();
+					bench.start();
+					//console.log('data', data);
+					var uint8View = new Uint8Array(data);
+					var size = uint8View.length;
+					var i,j;
+					for (i = 0, j = 0, n = pix.length; i < n; i += 4, j += 3) {
+						if(j >= size) break;
+						pix[i  ] = uint8View[j+2]; // r
+						pix[i+1] = uint8View[j+1]; // g
+						pix[i+2] = uint8View[j  ]; // b
+						pix[i+3] = 255; // a
+					}
+					output.updatePx();
+					bench.end('draw');
+					//console.log('data', size, bench.show()); 
+				});
+				stream.on('end', function(){
+					console.log('end'); 
+				});
+			}else{
+				stream.once('data', function(data){
+					console.log('data', sizeReceived);
+					var ui8 = new Uint8Array(data);
+					var res = String.fromCharCode.apply(null, ui8).split("x");
+					var width = parseInt(res[0]);
+					var height = parseInt(res[1]);
+					adjustSize(width, height);
+					console.log('sizeReceived', ui8.length, res, width, height); 
+				});
+				stream.once('end', function(){
+					sizeReceived = true;
+					console.log('1st end'); 
+				});
+			}
+		});
+/*
+		var sizeReceived = false;
+		ws.onopen = function () {
+			ws.send("open");
+			console.log('onopen');
+		};
+
+		ws.onerror = function (e) {
+			console.log(e);
+		};
+
+		ws.onmessage = function (message) {
+			if(!sizeReceived){
+				sizeReceived = true;
+				var res = message.data.split("x");
+				var width = parseInt(res[0]);
+				var height = parseInt(res[1]);
+				adjustSize(width, height);
+				console.log('sizeReceived', message.data, width, height);
+			}else{
+				console.log('frame', message);
+				var reader = new FileReader();
+				reader.addEventListener("loadend", function() {
+					// reader.result contains the contents of blob as a typed array
+					var uint8View = new Uint8Array(reader.result);
+					var size = uint8View.length;
+					var i,j;
+					for (i = 0, j = 0, n = pix.length; i < n; i += 4, j += 1) {
+						if(j >= size) break;
+						pix[i  ] = uint8View[j]; // r
+						pix[i+1] = uint8View[j]; // g
+						pix[i+2] = uint8View[j]; // b
+						pix[i+3] = 255; // a
+					}
+					output.updatePx();
+				});
+				reader.readAsArrayBuffer(message.data);
+			}
+			/*var data = JSON.parse(message.data);
+			switch (data.type) {
+				case "size":
+					sizeReceived = true;
+					adjustSize(data.width, data.height);
+				break;
+				case "frame":
+					if (!sizeReceived) {
+						
+						ws.send("size");
+					}
+					image = "data:image/jpg;base64," + data.frame;
+					drawFrame(image);
+				break;
+
+			}
+		};*/
+		$("#play").hide();
+		$("#pause").show();
+    };
+
+
+</script>
+
+</html>

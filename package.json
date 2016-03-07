@@ -2,9 +2,9 @@
     "name": "Streaming",
     "main": "src/main.js",
     "dependencies": {
-        "ws": "*"
+        "binaryjs": "*"
     },
     "scripts": {
-        "start": "node src/main.js"
+        "start": "node cam.js"
     }
 }

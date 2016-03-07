@@ -32,6 +32,7 @@ struct TMessage {
     bool resize;
     int32_t width, height;
     bool window;
+    bool raw;
     std::string codec;
     ~TMessage() {
         callBack.Reset();
@@ -43,6 +44,7 @@ struct AsyncMessage {
     std::vector<unsigned char> image;
     cv::Mat frame;
     bool window;
+    bool raw;
 };
 
 TMessage *message;
@@ -56,17 +58,25 @@ void updateAsync(uv_async_t* req, int status) {
     
     Local<Function> callBack = Local<Function>::New(isolate,message->callBack);
     
-    if(asyncMessage->window && asyncMessage->frame.size().height > 0 && asyncMessage->frame.size().width > 0 ) {
-        cv::imshow("Preview", asyncMessage->frame);
-        cv::waitKey(20);
-    }
-    
-    Local<Array> arr = Array::New(isolate,asyncMessage->image.size());
+//    if(asyncMessage->window && asyncMessage->frame.size().height > 0 && asyncMessage->frame.size().width > 0 ) {
+//        cv::imshow("Preview", asyncMessage->frame);
+//        cv::waitKey(20);
+//    }
+    int size = (asyncMessage->raw) ? asyncMessage->frame.total() * asyncMessage->frame.channels() : asyncMessage->image.size();
+    unsigned char *ch;
+    Local<Array> arr = Array::New(isolate, size);
     int pos = 0;
-    for(unsigned char c : asyncMessage->image) {
-        arr->Set(pos++,Integer::New(isolate,c));
+    if(asyncMessage->raw){
+        ch = asyncMessage->frame.data;
+		for(pos = 0; pos<size; pos++) {
+			arr->Set(pos, Integer::New(isolate, *ch));
+            ch++;
+		}
+    }else{
+        for(unsigned char c : asyncMessage->image) {
+            arr->Set(pos++,Integer::New(isolate,c));
+        }
     }
-    
     Local<Value> argv[] = {
             arr
     };
@@ -83,11 +93,12 @@ void CameraOpen(uv_work_t* req) {
     
     cv::Mat tmp, rsz;
     
-    while(m_brk > 0 && message->capture->isOpened()) {  
+    while(m_brk > 0 && message->capture->isOpened()) {
         
         AsyncMessage *msg = new AsyncMessage();
         msg->image = std::vector<unsigned char>();
         msg->window = message->window;
+        msg->raw = message->raw;
         
         //Capture Frame From WebCam
         message->capture->read(tmp);
@@ -106,25 +117,30 @@ void CameraOpen(uv_work_t* req) {
             preview_height = tmp.size().height;
         }
 
-        //TODO : Add image parameters here
+        if(!message->raw){
 
-        std::vector<int> compression_parameters = std::vector<int>(2);
-        compression_parameters[0] = CV_IMWRITE_JPEG_QUALITY;
-        compression_parameters[1] = 85;
+            //TODO : Add image parameters here
+
+            std::vector<int> compression_parameters = std::vector<int>(2);
+            compression_parameters[0] = CV_IMWRITE_JPEG_QUALITY;
+            compression_parameters[1] = 100;
+
+            //compression_parameters[0] = CV_IMWRITE_PNG_COMPRESSION;
+            //compression_parameters[1] = 9;
         
-        //Encode to jpg
-        if(message->resize) {
-            cv::imencode(message->codec,rsz,msg->image,compression_parameters);   
-        } else {
-            cv::imencode(message->codec,tmp,msg->image,compression_parameters);
+            //Encode to jpg
+            if(message->resize) {
+                cv::imencode(message->codec,rsz,msg->image,compression_parameters);   
+            } else {
+                cv::imencode(message->codec,tmp,msg->image,compression_parameters);
+            }
+        
+            compression_parameters.clear();
         }
-        
-        compression_parameters.clear();
-        
-        if(message->window && tmp.size().height > 0 && tmp.size().width > 0 ) {
-            cv::imshow("Preview", msg->frame);
-            cv::waitKey(20);
-        }
+//        if(message->window && tmp.size().height > 0 && tmp.size().width > 0 ) {
+//            cv::imshow("Preview", msg->frame);
+//            cv::waitKey(20);
+//        }
         
         async.data  = msg;
         uv_async_send(&async);
@@ -173,6 +189,7 @@ void Open(const FunctionCallbackInfo<Value>& args) {
     }
     
     //Default Arguments
+    message->raw = false;
     message->codec = std::string(".jpg");
     Local<Value> input = Number::New(isolate,0);
     std::string inputString;
@@ -192,6 +209,9 @@ void Open(const FunctionCallbackInfo<Value>& args) {
         if(params->Has(String::NewFromUtf8(isolate,"window"))) {
             message->window = params->Get(String::NewFromUtf8(isolate,"window"))->BooleanValue();
         }
+        if(params->Has(String::NewFromUtf8(isolate,"raw"))) {
+            message->raw = params->Get(String::NewFromUtf8(isolate,"raw"))->BooleanValue();
+        }
         if(params->Has(String::NewFromUtf8(isolate,"codec"))) {
             Local<String> val = params->Get(String::NewFromUtf8(isolate,"codec"))->ToString();
             message->codec = stringValue(val);
@@ -204,9 +224,9 @@ void Open(const FunctionCallbackInfo<Value>& args) {
         }
         
     }
-    if(message->window) {
-        cv::namedWindow("Preview",1);   
-    }
+//    if(message->window) {
+//        cv::namedWindow("Preview",1);   
+//    }
     
     message->callBack.Reset(isolate,Handle<Function>::Cast(args[0]));
     
@@ -233,11 +253,14 @@ void Open(const FunctionCallbackInfo<Value>& args) {
 void Close(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = Isolate::GetCurrent();
     HandleScope scope(isolate);
-    
+
+    // fix dobule close
+    if(m_brk == 0) return;
+
     m_brk = 0;
     uv_loop_close(loop);
     uv_close((uv_handle_t *) &async, NULL);
-    cv::destroyWindow("Preview");
+//    cv::destroyWindow("Preview");
     args.GetReturnValue().Set(String::NewFromUtf8(isolate,"ok"));
 }
 
