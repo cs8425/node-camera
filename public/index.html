@@ -121,13 +121,10 @@
 	function closeCamera() {
 		$("#play").show();
 		$("#pause").hide();
-		//ws.send("close");
 		ws.close();
 	};
 
     function openCamera() {
-//		adjustSize(160, 120);
-		//ws = new WebSocket("ws://" + window.location.host.split(":")[0] + ":9090");
 		ws = new BinaryClient("ws://" + window.location.host.split(":")[0] + ":9090");
 		var sizeReceived = false;
 
@@ -175,61 +172,6 @@
 				});
 			}
 		});
-/*
-		var sizeReceived = false;
-		ws.onopen = function () {
-			ws.send("open");
-			console.log('onopen');
-		};
-
-		ws.onerror = function (e) {
-			console.log(e);
-		};
-
-		ws.onmessage = function (message) {
-			if(!sizeReceived){
-				sizeReceived = true;
-				var res = message.data.split("x");
-				var width = parseInt(res[0]);
-				var height = parseInt(res[1]);
-				adjustSize(width, height);
-				console.log('sizeReceived', message.data, width, height);
-			}else{
-				console.log('frame', message);
-				var reader = new FileReader();
-				reader.addEventListener("loadend", function() {
-					// reader.result contains the contents of blob as a typed array
-					var uint8View = new Uint8Array(reader.result);
-					var size = uint8View.length;
-					var i,j;
-					for (i = 0, j = 0, n = pix.length; i < n; i += 4, j += 1) {
-						if(j >= size) break;
-						pix[i  ] = uint8View[j]; // r
-						pix[i+1] = uint8View[j]; // g
-						pix[i+2] = uint8View[j]; // b
-						pix[i+3] = 255; // a
-					}
-					output.updatePx();
-				});
-				reader.readAsArrayBuffer(message.data);
-			}
-			/*var data = JSON.parse(message.data);
-			switch (data.type) {
-				case "size":
-					sizeReceived = true;
-					adjustSize(data.width, data.height);
-				break;
-				case "frame":
-					if (!sizeReceived) {
-						
-						ws.send("size");
-					}
-					image = "data:image/jpg;base64," + data.frame;
-					drawFrame(image);
-				break;
-
-			}
-		};*/
 		$("#play").hide();
 		$("#pause").show();
     };

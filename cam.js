@@ -1,45 +1,41 @@
-var WebSocketServer = require("ws").Server;
 var cam = require("./build/Release/camera.node");
 var fs = require("fs");
 var BinaryServer = require('binaryjs').BinaryServer;
 
-var websocketPort = 9090,
-    width = 160,
-    inputString = "/dev/video0",
-    height = 120;
-
 var config = {
 	port: 9999,
+	wsPort: 9090,
 	ipaddr: '0.0.0.0',
 	dir: './public',
+	width: 240,
+	height: 180,
+	inputString: '/dev/video0'
 };
+
 var server = require('./file-server.js')(config);
 
 //Gathering Arguments
 process.argv.forEach(function (val, index, array) {
     switch (val) {
     case "-wsport":
-        websocketPort = parseInt(array[index + 1]);
+        config.wsPort = parseInt(array[index + 1]);
         break;
     case "-webport":
         config.port = parseInt(array[index + 1]);
         break;
     case "-res":
         var res = array[index + 1].split("x");
-        width = parseInt(res[0]);
-        height = parseInt(res[1]);
+        config.width = parseInt(res[0]);
+        config.height = parseInt(res[1]);
         break;
     case "-input":
-        inputString = array[index + 1];
+        config.inputString = array[index + 1];
         console.log(inputString);
     }
 });
 
-//var wss = new WebSocketServer({
-//	port: websocketPort
-//});
 var wss = BinaryServer({
-	port: websocketPort,
+	port: config.wsPort,
 	chunkSize: 360*640*3
 });
 
@@ -79,7 +75,6 @@ var frameCallback = function (image) {
 	}
 
 	for (var index in clients) {
-		//clients[index].send(raw, { binary: true, mask: false });
 		clients[index].write(raw);
 	}
 };
@@ -100,11 +95,11 @@ var connectClient = function (ws) {
 	if (!cam.IsOpen()) {
 		console.log("New Clients, Opening Camera");
 		cam.Open(frameCallback, {
-			width: width,
-			height: height,
+			width: config.width,
+			height: config.height,
 			raw: true,
 			codec: ".jpg",
-			input: inputString
+			input: config.inputString
 		});
 	}
 //	clients[index] = ws.createStream();
@@ -128,14 +123,6 @@ wss.on('connection', function (ws) {
 	ws.on('close', function () {
 		disconnectClient(index);
 	});
-
-/*	ws.on('open', function () {
-		console.log("Opened");
-	});
-
-	ws.on('message', function (message) {
-		console.log("id", index, message);
-	});*/
 
 });
 
